@@ -145,7 +145,7 @@ public final class EventStreamReaderImpl<Type> implements EventStreamReader<Type
         long offset = -1;
         ByteBuffer buffer = null;
         do {
-            String checkpoint = updateGroupStateIfNeeded();
+            String checkpoint = updateGroupStateIfNeeded(); // TODO Aqui se puede liberar un segmento
             if (checkpoint != null) {
                 // return checkpoint event to user
                 return createEmptyEvent(checkpoint);
@@ -322,15 +322,21 @@ public final class EventStreamReaderImpl<Type> implements EventStreamReader<Type
     @GuardedBy("readers")
     private void releaseSegmentsIfNeeded(PositionInternal position) throws ReaderNotInReaderGroupException {
         releaseSealedSegments();
-        Segment segment = groupState.findSegmentToReleaseIfRequired();
-        if (segment != null) {
+//        Segment segment = groupState.findSegmentToReleaseIfRequired(); // TODO Solo se libera un segmento a la vez
+        List<Segment> segments = groupState.findSegmentsToReleaseIfRequired();
+//        System.out.println(this + " Segments to release: " + segments);
+        for(Segment segment : segments) {
+//            System.out.println(this + " releasing segment " + segment);
             log.info("{} releasing segment {}", this, segment);
             EventSegmentReader reader = readers.stream().filter(r -> r.getSegmentId().equals(segment)).findAny().orElse(null);
             if (reader != null) {
                 if (groupState.releaseSegment(segment, reader.getOffset(), getLag(), position)) {
+//                    System.out.println(this + " Successfully released segment " + segment);
                     readers.remove(reader);
                     ranges.remove(reader.getSegmentId());
                     reader.close();
+//                } else {
+//                    System.out.println(this + " Failed to release segment " + segment);
                 }
             }
         }

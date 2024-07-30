@@ -37,16 +37,11 @@ import io.pravega.client.stream.impl.ReaderGroupState.UpdateDistanceToTail;
 import io.pravega.common.TimeoutTimer;
 import io.pravega.common.hash.HashHelper;
 import java.time.Duration;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import io.pravega.shared.NameUtils;
 import lombok.Getter;
@@ -81,9 +76,9 @@ import static io.pravega.common.concurrent.Futures.getThrowingException;
 @Slf4j
 public class ReaderGroupStateManager {
     
-    static final Duration TIME_UNIT = Duration.ofMillis(1000);
-    static final Duration UPDATE_WINDOW = Duration.ofMillis(30000);
-    static final Duration UPDATE_CONFIG_WINDOW = Duration.ofMillis(10000);
+    static final Duration TIME_UNIT = Duration.ofMillis(1000); // 1 second
+    static final Duration UPDATE_WINDOW = Duration.ofMillis(30000); // 30 seconds
+    static final Duration UPDATE_CONFIG_WINDOW = Duration.ofMillis(10000); // 10 seconds
     private static final double COMPACTION_PROBABILITY = 0.05;
     private static final int MIN_BYTES_BETWEEN_COMPACTIONS = 512 * 1024;
     private final Object decisionLock = new Object();
@@ -238,13 +233,36 @@ public class ReaderGroupStateManager {
         }
         return segment;
     }
+
+    /**
+     * If a set of segments should be released because the distribution of segments is imbalanced and
+     * this reader has not done so in a while, this returns the List of segments that should be released.
+     */
+    List<Segment> findSegmentsToReleaseIfRequired() {
+        fetchUpdatesIfNeeded();
+        List<Segment> segments = new ArrayList<>();
+        synchronized (decisionLock) {
+            if (!releaseTimer.hasRemaining() && sync.getState().getCheckpointForReader(readerId) == null
+                    && doesReaderOwnTooManySegments(sync.getState())) {
+                // Compute the number of segments to release
+                int numSegmentsToRelease = calculateNumSegmentsToRelease(sync.getState());
+//                System.out.println("[Reader "+ readerId + "] Number of segments to release: " + numSegmentsToRelease);
+                segments = findSegmentsToRelease(numSegmentsToRelease);
+                if (!segments.isEmpty()) {
+                    releaseTimer.reset(UPDATE_WINDOW);
+                    acquireTimer.reset(UPDATE_WINDOW);
+                }
+            }
+        }
+        return segments;
+    }
     
     /**
      * Returns true if this reader owns multiple segments and has more than a full segment more than
      * the reader with the least assigned to it.
      */
-    private boolean doesReaderOwnTooManySegments(ReaderGroupState state) {
-        Map<String, Double> sizesOfAssignemnts = state.getRelativeSizes();
+    private boolean doesReaderOwnTooManySegments2(ReaderGroupState state) {
+        Map<String, Double> sizesOfAssignemnts = state.getRelativeSizes(); // TODO Se mira cuanto le queda a cada reader por leer?
         Set<Segment> assignedSegments = state.getSegments(readerId);
         if (sizesOfAssignemnts.isEmpty() || assignedSegments == null || assignedSegments.size() <= 1) {
             return false;
@@ -252,6 +270,18 @@ public class ReaderGroupStateManager {
         double min = sizesOfAssignemnts.values().stream().min(Double::compareTo).get();
         return sizesOfAssignemnts.get(readerId) > min + Math.max(1, state.getNumberOfUnassignedSegments());
     }
+
+    private boolean doesReaderOwnTooManySegments(ReaderGroupState state) {
+        int ownedSegments = state.getSegments(readerId).size();
+        int totalSegments = state.getNumberOfSegments();
+        int numReaders = state.getNumberOfReaders();
+        int equallyDistributed = totalSegments / numReaders;
+        if (totalSegments % numReaders != 0) {
+            equallyDistributed++;
+        }
+        return ownedSegments > equallyDistributed;
+    }
+
 
     /**
      * Given a set of segments returns one to release. The one returned is arbitrary.
@@ -262,6 +292,18 @@ public class ReaderGroupStateManager {
                        .max((s1, s2) -> Double.compare(hashHelper.hashToRange(s1.getScopedName()),
                                                        hashHelper.hashToRange(s2.getScopedName())))
                        .orElse(null);
+    }
+
+    /**
+     * Given a set of segments returns n to release. The one returned is arbitrary.
+     */
+    private List<Segment> findSegmentsToRelease(int segmentsToRelease) {
+        Set<Segment> segments = sync.getState().getSegments(readerId);
+        return segments.stream()
+                .sorted((s1, s2) -> Double.compare(hashHelper.hashToRange(s1.getScopedName()),
+                        hashHelper.hashToRange(s2.getScopedName())))
+                .limit(segmentsToRelease)
+                .collect(Collectors.toList());
     }
 
     /**
@@ -296,6 +338,13 @@ public class ReaderGroupStateManager {
                     && doesReaderOwnTooManySegments(state)) {
                 updates.add(new ReleaseSegment(readerId, segment, lastOffset));
                 updates.add(new UpdateDistanceToTail(readerId, timeLag, position.asImpl().getOwnedSegmentRangesWithOffsets()));
+//            } else {
+//                String debug = "Reader " + readerId + " is not releasing segment " + segment + " because it does not own it or has a checkpoint pending.\n"
+//                        + "segments != null: " + (segments != null) + "\n"
+//                        + "segments.contains(segment): " + (segments != null ? segments.contains(segment) : "null") + "\n"
+//                        + "state.getCheckpointForReader(readerId) == null: " + (state.getCheckpointForReader(readerId) == null) + "\n"
+//                        + "doesReaderOwnTooManySegments(state): " + doesReaderOwnTooManySegments(state);
+//                System.out.println(debug);
             }
         });
         ReaderGroupState state = sync.getState();
@@ -310,7 +359,8 @@ public class ReaderGroupStateManager {
 
     @VisibleForTesting
     static Duration calculateReleaseTime(String readerId, ReaderGroupState state) {
-        return TIME_UNIT.multipliedBy(1 + state.getRanking(readerId));
+        return TIME_UNIT;
+//        return TIME_UNIT.multipliedBy(1 + state.getRanking(readerId));
     }
 
     /**
@@ -450,7 +500,7 @@ public class ReaderGroupStateManager {
         return result;
     }
     
-    private int calculateNumSegmentsToAcquire(ReaderGroupState state) {
+    private int calculateNumSegmentsToAcquireOLD(ReaderGroupState state) {
         int unassignedSegments = state.getNumberOfUnassignedSegments();
         if (unassignedSegments == 0) {
             return 0;
@@ -463,11 +513,38 @@ public class ReaderGroupStateManager {
         return Math.max(Math.max(equallyDistributed, fairlyDistributed), 1);
     }
 
+    private int calculateNumSegmentsToAcquire(ReaderGroupState state) {
+        int unassignedSegments = state.getNumberOfUnassignedSegments();
+        if (unassignedSegments == 0) {
+            return 0;
+        }
+        int numSegments = state.getNumberOfSegments();
+        int segmentsOwned = state.getSegments(readerId).size();
+        int numReaders = state.getNumberOfReaders();
+        int equallyDistributed = numSegments / numReaders;
+        if (numSegments % numReaders != 0) {
+            equallyDistributed++;
+        }
+        return Math.min(unassignedSegments, Math.max(0, equallyDistributed - segmentsOwned));
+    }
+
+    private int calculateNumSegmentsToRelease(ReaderGroupState state) {
+        int numSegments = state.getNumberOfSegments();
+        int segmentsOwned = state.getSegments(readerId).size();
+        int numReaders = state.getNumberOfReaders();
+        int equallyDistributed = numSegments / numReaders;
+        if (numSegments % numReaders != 0) {
+            equallyDistributed++;
+        }
+        return Math.max(0, segmentsOwned - equallyDistributed);
+    }
+
     @VisibleForTesting
     static Duration calculateAcquireTime(String readerId, ReaderGroupState state) {
-        int multiplier = state.getNumberOfReaders() - state.getRanking(readerId);
-        Preconditions.checkArgument(multiplier >= 1, "Invalid acquire timer multiplier");
-        return TIME_UNIT.multipliedBy(multiplier);
+        return TIME_UNIT;
+//        int multiplier = state.getNumberOfReaders() - state.getRanking(readerId);
+//        Preconditions.checkArgument(multiplier >= 1, "Invalid acquire timer multiplier");
+//        return TIME_UNIT.multipliedBy(multiplier);
     }
 
     /**

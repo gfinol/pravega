@@ -319,6 +319,10 @@ public class ReaderGroupState implements Revisioned {
      */
     @Synchronized
     public boolean isEndOfData() {
+//        System.out.println("isEndOfData: " +
+//                "\tfutureSegments.isEmpty(): " + futureSegments.isEmpty() +
+//                "\tunassignedSegments.isEmpty(): " + unassignedSegments.isEmpty() +
+//                "\tassignedSegments: " + assignedSegments.values().stream().allMatch(Map::isEmpty));
         return futureSegments.isEmpty() && unassignedSegments.isEmpty() &&
                 assignedSegments.values().stream().allMatch(Map::isEmpty);
     }
