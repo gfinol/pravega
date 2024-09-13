@@ -28,7 +28,10 @@ import io.pravega.client.stream.TransactionalEventStreamWriter;
 import io.pravega.client.stream.impl.ClientFactoryImpl;
 import io.pravega.client.control.impl.ControllerImpl;
 import io.pravega.client.control.impl.ControllerImplConfig;
+import io.pravega.client.stream.impl.RoutedEventStreamWriterImpl;
 import lombok.val;
+
+import java.util.function.Function;
 
 /**
  * Used to create Writers and Readers operating on a stream.
@@ -90,6 +93,20 @@ public interface EventStreamClientFactory extends AutoCloseable {
      * @return Newly created writer object
      */
     <T> EventStreamWriter<T> createEventWriter(String writerId, String streamName, Serializer<T> s, EventWriterConfig config);
+
+    /**
+     * Creates a new writer that can write to the specified stream.
+     * Uses the provided hash function to select the segment to write to.
+     *
+     * @param writerId A name which identifies this writer.
+     * @param streamName The name of the stream to write to.
+     * @param s The Serializer.
+     * @param config The writer configuration.
+     * @param hasher A function that hashes a routing key to a double between 0 and 1.
+     * @param <T> The type of events.
+     * @return Newly created writer object
+     */
+    <R, T> RoutedEventStreamWriterImpl<R, T> createRoutedEventWriter(String writerId, String streamName, Serializer<T> s, EventWriterConfig config, Function<R, Double> hasher);
     
     /**
      * Creates a new transactional writer that can write to the specified stream atomically.

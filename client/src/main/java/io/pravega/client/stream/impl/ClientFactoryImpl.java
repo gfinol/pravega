@@ -67,6 +67,7 @@ import io.pravega.shared.security.auth.AccessOperation;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import lombok.val;
 import lombok.extern.slf4j.Slf4j;
@@ -178,6 +179,23 @@ public final class ClientFactoryImpl extends AbstractClientFactoryImpl implement
                 "ScalingRetransmission-" + stream.getScopedName());
         try {
             return new EventStreamWriterImpl<T>(stream, writerId, controller, outFactory, s, config, retransmitPool, connectionPool.getInternalExecutor(), connectionPool);
+        } catch (Throwable ex) {
+            // Make sure we shut down the pool if we can't use it.
+            ExecutorServiceHelpers.shutdown(retransmitPool);
+            throw ex;
+        }
+    }
+
+    @Override
+    public <R, T> RoutedEventStreamWriterImpl<R, T> createRoutedEventWriter(String writerId, String streamName, Serializer<T> s,
+                                                            EventWriterConfig config, Function<R, Double> hashFunction) {
+        NameUtils.validateWriterId(writerId);
+        log.info("Creating routed writer: {} for stream: {} with configuration: {}", writerId, streamName, config);
+        Stream stream = new StreamImpl(scope, streamName);
+        ExecutorService retransmitPool = ExecutorServiceHelpers.getShrinkingExecutor(1, 100,
+                "ScalingRetransmission-" + stream.getScopedName());
+        try {
+            return new RoutedEventStreamWriterImpl<>(stream, writerId, controller, outFactory, s, config, retransmitPool, connectionPool.getInternalExecutor(), connectionPool, hashFunction);
         } catch (Throwable ex) {
             // Make sure we shut down the pool if we can't use it.
             ExecutorServiceHelpers.shutdown(retransmitPool);

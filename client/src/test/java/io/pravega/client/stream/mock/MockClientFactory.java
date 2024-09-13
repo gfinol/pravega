@@ -36,6 +36,9 @@ import io.pravega.client.stream.TransactionalEventStreamWriter;
 import io.pravega.client.stream.impl.AbstractClientFactoryImpl;
 import io.pravega.client.stream.impl.ClientFactoryImpl;
 import io.pravega.client.control.impl.Controller;
+import io.pravega.client.stream.impl.RoutedEventStreamWriterImpl;
+
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 public class MockClientFactory extends AbstractClientFactoryImpl implements EventStreamClientFactory, SynchronizerClientFactory, AutoCloseable {
@@ -69,7 +72,12 @@ public class MockClientFactory extends AbstractClientFactoryImpl implements Even
     public <T> EventStreamWriter<T> createEventWriter(String writerId, String streamName, Serializer<T> s, EventWriterConfig config) {
         return impl.createEventWriter(writerId, streamName, s, config);
     }
-    
+
+    @Override
+    public <R, T> RoutedEventStreamWriterImpl<R, T> createRoutedEventWriter(String writerId, String streamName, Serializer<T> s, EventWriterConfig config, Function<R, Double> hasher) {
+        return impl.createRoutedEventWriter(writerId, streamName, s, config, hasher);
+    }
+
     @Override
     public <T> TransactionalEventStreamWriter<T> createTransactionalEventWriter(String writerId, String streamName, Serializer<T> s, EventWriterConfig config) {
         return impl.createTransactionalEventWriter(writerId, streamName, s, config);
