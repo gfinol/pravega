@@ -76,8 +76,7 @@ public final class RoutedEventStreamWriterImpl<RoutingKey, Type> implements Even
     private final Controller controller;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final EventWriterConfig config;
-    private final SegmentSelector selector;
-    private final RoutedSegmentSelector<RoutingKey> routedSelector;
+    private final RoutedSegmentSelector<RoutingKey> selector;
     private final Consumer<Segment> segmentSealedCallBack;
     private final ConcurrentLinkedQueue<Segment> sealedSegmentQueue = new ConcurrentLinkedQueue<>();
     private final ReusableLatch sealedSegmentQueueEmptyLatch = new ReusableLatch(true);
@@ -96,8 +95,7 @@ public final class RoutedEventStreamWriterImpl<RoutingKey, Type> implements Even
         this.segmentSealedCallBack = this::handleLogSealed;
         this.tokenProvider = DelegationTokenProviderFactory.create(this.controller, this.stream.getScope(),
                 this.stream.getStreamName(), AccessOperation.WRITE);
-        this.selector = new SegmentSelector(stream, controller, outputStreamFactory, config, tokenProvider);
-        this.routedSelector = new RoutedSegmentSelector<RoutingKey>(stream, controller, outputStreamFactory, config, tokenProvider, hashFunction);
+        this.selector = new RoutedSegmentSelector<RoutingKey>(stream, controller, outputStreamFactory, config, tokenProvider, hashFunction);
         this.serializer = Preconditions.checkNotNull(serializer);
         this.config = config;
         this.retransmitPool = Preconditions.checkNotNull(retransmitPool);
@@ -216,7 +214,7 @@ public final class RoutedEventStreamWriterImpl<RoutingKey, Type> implements Even
         return ackFuture;
     }
 
-    public CompletableFuture<Void> writeRoutedEventInternal(RoutingKey routingKey, List<Type> events) {
+    public CompletableFuture<Void> writeRoutedEvents(RoutingKey routingKey, List<Type> events) {
         Preconditions.checkNotNull(routingKey);
         Preconditions.checkNotNull(events);
         Exceptions.checkNotClosed(closed.get(), this);
@@ -246,11 +244,11 @@ public final class RoutedEventStreamWriterImpl<RoutingKey, Type> implements Even
     }
 
     private SegmentOutputStream getRoutedSegmentWriter(RoutingKey routingKey) {
-        SegmentOutputStream segmentWriter = routedSelector.getSegmentOutputStreamForKey(routingKey);
+        SegmentOutputStream segmentWriter = selector.getSegmentOutputStreamForRoutingKey(routingKey);
         while (segmentWriter == null) {
-            log.info("Don't have a writer for segment: {}", routedSelector.getSegmentForEvent(routingKey));
+            log.info("Don't have a writer for segment: {}", selector.getSegmentForRoutedEvent(routingKey));
             handleMissingLog();
-            segmentWriter = routedSelector.getSegmentOutputStreamForKey(routingKey);
+            segmentWriter = selector.getSegmentOutputStreamForRoutingKey(routingKey);
         }
         return segmentWriter;
     }

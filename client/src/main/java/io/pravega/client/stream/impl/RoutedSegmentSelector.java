@@ -60,6 +60,32 @@ public class RoutedSegmentSelector<RoutingKey> {
     private final AtomicBoolean sealed = new AtomicBoolean(false);
     private final Function<RoutingKey, Double> hashFunction;
 
+    /**
+     * Selects which segment an event should be written to.
+     *
+     * @param routingKey The key that should be used to select from the segment that the event
+     *            should go to.
+     * @return The SegmentOutputStream for the segment that has been selected or null if
+     *         {@link #refreshSegmentEventWriters(Consumer)} needs to be called.
+     */
+    @Synchronized
+    public SegmentOutputStream getSegmentOutputStreamForKey(String routingKey) {
+        if (currentSegments == null) {
+            return null;
+        }
+        return writers.get(getSegmentForEvent(routingKey));
+    }
+
+    @Synchronized
+    public Segment getSegmentForEvent(String routingKey) {
+        if (currentSegments == null) {
+            return null;
+        }
+        if (routingKey == null) {
+            return currentSegments.getSegmentForKey(random.nextDouble());
+        }
+        return currentSegments.getSegmentForKey(routingKey);
+    }
 
     /**
      * Selects which segment an event should be written to.
@@ -70,15 +96,17 @@ public class RoutedSegmentSelector<RoutingKey> {
      *         {@link #refreshSegmentEventWriters(Consumer)} needs to be called.
      */
     @Synchronized
-    public SegmentOutputStream getSegmentOutputStreamForKey(RoutingKey routingKey) {
+    public SegmentOutputStream getSegmentOutputStreamForRoutingKey(RoutingKey routingKey) {
         if (currentSegments == null) {
             return null;
         }
-        return writers.get(getSegmentForEvent(routingKey));
+        return writers.get(getSegmentForRoutedEvent(routingKey));
     }
 
+
+
     @Synchronized
-    public Segment getSegmentForEvent(RoutingKey routingKey) {
+    public Segment getSegmentForRoutedEvent(RoutingKey routingKey) {
         if (currentSegments == null) {
             return null;
         }

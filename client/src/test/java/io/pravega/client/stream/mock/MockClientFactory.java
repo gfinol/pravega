@@ -74,6 +74,11 @@ public class MockClientFactory extends AbstractClientFactoryImpl implements Even
     }
 
     @Override
+    public <R, T> RoutedEventStreamWriterImpl<R, T> createRoutedEventWriter(String streamName, Serializer<T> s, EventWriterConfig config, Function<R, Double> hasher) {
+        return impl.createRoutedEventWriter(streamName, s, config, hasher);
+    }
+
+    @Override
     public <R, T> RoutedEventStreamWriterImpl<R, T> createRoutedEventWriter(String writerId, String streamName, Serializer<T> s, EventWriterConfig config, Function<R, Double> hasher) {
         return impl.createRoutedEventWriter(writerId, streamName, s, config, hasher);
     }

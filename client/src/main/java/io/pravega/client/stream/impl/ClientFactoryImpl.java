@@ -185,6 +185,11 @@ public final class ClientFactoryImpl extends AbstractClientFactoryImpl implement
             throw ex;
         }
     }
+    @Override
+    public <R, T> RoutedEventStreamWriterImpl<R, T> createRoutedEventWriter(String streamName, Serializer<T> s,
+                                                            EventWriterConfig config, Function<R, Double> hashFunction) {
+        return createRoutedEventWriter(UUID.randomUUID().toString(), streamName, s, config, hashFunction);
+    }
 
     @Override
     public <R, T> RoutedEventStreamWriterImpl<R, T> createRoutedEventWriter(String writerId, String streamName, Serializer<T> s,
