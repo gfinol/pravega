@@ -560,6 +560,7 @@ project('segmentstore:server:host') {
     mainClassName = "io.pravega.segmentstore.server.host.ServiceStarter"
 
     startScripts {
+        classpath = files('$APP_HOME/lib/hadoop-mapreduce-client-jobclient-3.3.6-tests.jar') + classpath
         classpath += files('$APP_HOME/pluginlib')
         doLast {
             def scriptFile = file getUnixScript()
