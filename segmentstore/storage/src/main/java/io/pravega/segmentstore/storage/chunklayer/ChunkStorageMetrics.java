@@ -66,6 +66,10 @@ public class ChunkStorageMetrics {
     static final Counter SLTS_CONCAT_BYTES = STATS_LOGGER.createCounter(MetricsNames.SLTS_CONCAT_BYTES);
     static final Counter SLTS_TRUNCATE_RELOCATION_BYTES = STATS_LOGGER.createCounter(MetricsNames.SLTS_TRUNCATE_RELOCATION_BYTES);
     static final Counter SLTS_GC_TASK_PROCESSED = STATS_LOGGER.createCounter(MetricsNames.SLTS_GC_TASK_PROCESSED);
+    static final Counter SLTS_READ_OPERATION_COUNT = STATS_LOGGER.createCounter(MetricsNames.SLTS_STORAGE_READ_OPERATION_COUNT);
+    static final Counter SLTS_WRITE_OPERATION_COUNT = STATS_LOGGER.createCounter(MetricsNames.SLTS_STORAGE_WRITE_OPERATION_COUNT);
+    static final Counter SLTS_SYSTEM_READ_OPERATION_COUNT = STATS_LOGGER.createCounter(MetricsNames.SLTS_SYSTEM_READ_OPERATION_COUNT);
+    static final Counter SLTS_SYSTEM_WRITE_OPERATION_COUNT = STATS_LOGGER.createCounter(MetricsNames.SLTS_SYSTEM_WRITE_OPERATION_COUNT);
 
     static final Counter SLTS_GC_CHUNK_NEW = STATS_LOGGER.createCounter(MetricsNames.SLTS_GC_CHUNK_NEW);
     static final Counter SLTS_GC_CHUNK_QUEUED = STATS_LOGGER.createCounter(MetricsNames.SLTS_GC_CHUNK_QUEUED);

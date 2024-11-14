@@ -163,6 +163,10 @@ public final class MetricsNames {
     public static final String SLTS_TRUNCATE_COUNT = PREFIX + "segmentstore.storage.slts.truncate_count";  // Counter
     public static final String SLTS_TRUNCATE_RELOCATION_COUNT = PREFIX + "segmentstore.storage.slts.truncate_relocation_count";  // Counter
     public static final String SLTS_SYSTEM_TRUNCATE_COUNT = PREFIX + "segmentstore.storage.slts.system_truncate_count"; // Counter
+    public static final String SLTS_STORAGE_READ_OPERATION_COUNT = PREFIX + "segmentstore.storage.slts.read_operation_count"; // Counter
+    public static final String SLTS_STORAGE_WRITE_OPERATION_COUNT = PREFIX + "segmentstore.storage.slts.write_operation_count"; // Counter
+    public static final String SLTS_SYSTEM_READ_OPERATION_COUNT = PREFIX + "segmentstore.storage.slts.system_read_operation_count"; // Counter
+    public static final String SLTS_SYSTEM_WRITE_OPERATION_COUNT = PREFIX + "segmentstore.storage.slts.system_write_operation_count"; // Counter
 
     public static final String SLTS_GC_QUEUE_SIZE = PREFIX + "segmentstore.storage.slts.GC_queue_record_count";         // Counter
     public static final String SLTS_GC_TASK_PROCESSED = PREFIX + "segmentstore.storage.slts.GC.task_processed_count";   // Counter

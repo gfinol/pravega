@@ -50,6 +50,8 @@ import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLT
 import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_SYS_READ_INDEX_BLOCK_LOOKUP_LATENCY;
 import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_SYS_READ_INDEX_NUM_SCANNED;
 import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_SYS_READ_INDEX_SCAN_LATENCY;
+import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_READ_OPERATION_COUNT;
+import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_SYSTEM_READ_OPERATION_COUNT;
 
 @Slf4j
 class ReadOperation implements Callable<CompletableFuture<Integer>> {
@@ -134,6 +136,10 @@ class ReadOperation implements Callable<CompletableFuture<Integer>> {
             SLTS_SYSTEM_READ_LATENCY.reportSuccessEvent(elapsed);
             SLTS_SYSTEM_NUM_CHUNKS_READ.reportSuccessValue(cntChunksRead.get());
             SLTS_SYSTEM_READ_BYTES.add(length);
+            // We are reading from system segment.
+            SLTS_SYSTEM_READ_OPERATION_COUNT.inc();
+        } else { // We are reading from user segment.
+            SLTS_READ_OPERATION_COUNT.inc();
         }
         if (elapsed.toMillis() > 0) {
             val bytesPerSecond = 1000L * length / elapsed.toMillis();

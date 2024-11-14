@@ -44,13 +44,7 @@ import lombok.SneakyThrows;
 import lombok.val;
 import lombok.extern.slf4j.Slf4j;
 
-import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_NUM_CHUNKS_ADDED;
-import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_SYSTEM_NUM_CHUNKS_ADDED;
-import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_SYSTEM_WRITE_BYTES;
-import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_SYSTEM_WRITE_LATENCY;
-import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_WRITE_BYTES;
-import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_WRITE_INSTANT_TPUT;
-import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.SLTS_WRITE_LATENCY;
+import static io.pravega.segmentstore.storage.chunklayer.ChunkStorageMetrics.*;
 
 /**
  * Implements the write operation.
@@ -181,6 +175,10 @@ class WriteOperation implements Callable<CompletableFuture<Void>> {
             SLTS_SYSTEM_WRITE_BYTES.add(length);
             SLTS_SYSTEM_NUM_CHUNKS_ADDED.reportSuccessValue(chunksAddedCount.get());
             chunkedSegmentStorage.reportMetricsForSystemSegment(segmentMetadata);
+            // we are writing to a system segment
+            SLTS_SYSTEM_WRITE_OPERATION_COUNT.inc();
+        } else { // we are writing to a user segment
+            SLTS_WRITE_OPERATION_COUNT.inc();
         }
         if (elapsed.toMillis() > 0) {
             val bytesPerSecond = 1000L * length / elapsed.toMillis();
