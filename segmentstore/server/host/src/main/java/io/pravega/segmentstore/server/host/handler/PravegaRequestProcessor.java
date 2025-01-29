@@ -157,7 +157,7 @@ public class PravegaRequestProcessor extends FailingRequestProcessor implements 
 
     static final Duration TIMEOUT = Duration.ofMinutes(1);
     private static final TagLogger log = new TagLogger(LoggerFactory.getLogger(PravegaRequestProcessor.class));
-    private static final int MAX_READ_SIZE = 64 * 1024 * 1024;
+    private static final int MAX_READ_SIZE = 128 * 1024 * 1024;
     private static final String EMPTY_STACK_TRACE = "";
     @Getter(AccessLevel.PROTECTED)
     private final StreamSegmentStore segmentStore;
@@ -235,8 +235,7 @@ public class PravegaRequestProcessor extends FailingRequestProcessor implements 
         log.info("Is user stream segment: {}.", isUserStreamSegment);
         final int suggestedReadLength;
         if (isUserStreamSegment){
-            suggestedReadLength = readSegment.getSuggestedLength() * 4;
-//            suggestedReadLength = 64 * 1024 * 1024; // 64MB
+            suggestedReadLength = 64 * 1024 * 1024; // 64MB
         } else {
             suggestedReadLength = readSegment.getSuggestedLength();
         }
@@ -304,9 +303,15 @@ public class PravegaRequestProcessor extends FailingRequestProcessor implements 
 
         if (!cachedEntries.isEmpty() || endOfSegment) {
             // We managed to collect some data. Send it.
-            ByteBuf data = toByteBuf(cachedEntries, request.getSuggestedLength());
+            ByteBuf data = toByteBuf(cachedEntries);
+            int availableBytes = data.readableBytes();
+            boolean isPrefetchRead = availableBytes > request.getSuggestedLength();
+            if (isPrefetchRead){
+                data.retainedSlice(0, request.getSuggestedLength());
+            }
+
             log.info("Cached Data prepared with size {}, request id {}.", data.readableBytes(), request.getRequestId());
-            SegmentRead reply = new SegmentRead(segment, request.getOffset(), atTail, endOfSegment, data, request.getRequestId());
+            SegmentRead reply = new SegmentRead(segment, request.getOffset(), atTail && !isPrefetchRead, endOfSegment && !isPrefetchRead, data, request.getRequestId());
             log.info("Cached SegmentRead reply for segment {} at offset {} with length {}.", segment, request.getOffset(), data.readableBytes());
             connection.send(reply);
             this.statsRecorder.read(segment, reply.getData().readableBytes());
@@ -325,11 +330,18 @@ public class PravegaRequestProcessor extends FailingRequestProcessor implements 
             nonCachedEntry.requestContent(TIMEOUT);
             nonCachedEntry.getContent()
                     .thenAccept(contents -> {
-                        ByteBuf data = toByteBuf(Collections.singletonList(contents), request.getSuggestedLength());
+                        log.info("Preparing non-cached data for segment {} at offset {}.", segment, nonCachedEntry.getStreamSegmentOffset());
+                        ByteBuf data = toByteBuf(Collections.singletonList(contents));
+                        int availableBytes = data.readableBytes();
+                        boolean isPrefetchRead = availableBytes > request.getSuggestedLength();
+                        // Notice that endOfSegment is always false
+                        if (isPrefetchRead){
+                            data.retainedSlice(0, request.getSuggestedLength());
+                        }
+
                         log.info("Non-cached data prepared with size {}, request id {}.", data.readableBytes(), request.getRequestId());
                         SegmentRead reply = new SegmentRead(segment, nonCachedEntry.getStreamSegmentOffset(),
-                                atTail, endOfSegment,
-                                data, request.getRequestId());
+                                atTail && !isPrefetchRead, endOfSegment, data, request.getRequestId());
 
                         log.info("SegmentRead reply for segment {} at offset {} with length {}. Reply:  {}.", segment, nonCachedEntry.getStreamSegmentOffset(), data.readableBytes(), reply);
                         connection.send(reply);
@@ -407,45 +419,7 @@ public class PravegaRequestProcessor extends FailingRequestProcessor implements 
         val iterators = Iterators.transform(bufferView.iterateBuffers(), Unpooled::wrappedBuffer);
         return Unpooled.wrappedUnmodifiableBuffer(Iterators.toArray(iterators, ByteBuf.class));
     }
-
-    private ByteBuf toByteBuf(List<BufferView> contents, int maxBytes) {
-        // Concatenate iterators from all BufferView instances
-        val iterators = Iterators.concat(Iterators.transform(contents.iterator(), BufferView::iterateBuffers));
-
-        // Transform the concatenated buffers into Netty ByteBuf instances
-        val b = Iterators.transform(iterators, Unpooled::wrappedBuffer);
-
-        // Combine all ByteBuf instances into a single unmodifiable buffer
-        ByteBuf combined = Unpooled.wrappedUnmodifiableBuffer(Iterators.toArray(b, ByteBuf.class));
-
-        // Check if the combined buffer exceeds the maximum size
-        if (combined.readableBytes() > maxBytes) {
-            // Create a retained slice that limits the buffer to the maximum size
-            return combined.retainedSlice(0, maxBytes);
-        }
-        // Return the combined buffer as is if it's within the size limit
-        return combined;
-    }
-
-
-    private ByteBuf toByteBuf(BufferView bufferView, int maxBytes) {
-        // Transform the BufferView buffers into Netty ByteBuf instances
-        val iterators = Iterators.transform(bufferView.iterateBuffers(), Unpooled::wrappedBuffer);
-
-        // Combine all ByteBuf instances into a single unmodifiable buffer
-        ByteBuf combined = Unpooled.wrappedUnmodifiableBuffer(Iterators.toArray(iterators, ByteBuf.class));
-
-        // Check if the combined buffer exceeds the maximum size
-        if (combined.readableBytes() > maxBytes) {
-            // Create a retained slice that limits the buffer to the maximum size
-            return combined.retainedSlice(0, maxBytes);
-        }
-        // Return the combined buffer as is if it's within the size limit
-        return combined;
-    }
-
-
-
+    
     @Override
     public void updateSegmentAttribute(UpdateSegmentAttribute updateSegmentAttribute) {
         long requestId = updateSegmentAttribute.getRequestId();
