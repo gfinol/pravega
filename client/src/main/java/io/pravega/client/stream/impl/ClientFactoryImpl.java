@@ -224,6 +224,40 @@ public final class ClientFactoryImpl extends AbstractClientFactoryImpl implement
     }
 
     @Override
+    public <T> EventStreamReader<T> createReaderFixed(String readerId, String readerGroup, Serializer<T> s,
+                                                 ReaderConfig config, long segmentId) {
+        log.info("Creating reader: {} under readerGroup: {} with configuration: {}", readerId, readerGroup, config);
+        return createReaderFixed(readerId, readerGroup, s, config, System::nanoTime, System::currentTimeMillis, segmentId);
+    }
+
+    @VisibleForTesting
+    public <T> EventStreamReader<T> createReaderFixed(String readerId, String readerGroup, Serializer<T> s, ReaderConfig config,
+                                                 Supplier<Long> nanoTime, Supplier<Long> milliTime, long segmentId) {
+        NameUtils.validateReaderId(readerId);
+        log.info("Creating reader: {} under readerGroup: {} with configuration: {}", readerId, readerGroup, config);
+        SynchronizerConfig synchronizerConfig = SynchronizerConfig.builder().build();
+        StateSynchronizer<ReaderGroupState> sync = createStateSynchronizer(
+                NameUtils.getStreamForReaderGroup(readerGroup),
+                new ReaderGroupManagerImpl.ReaderGroupStateUpdatesSerializer(),
+                new ReaderGroupManagerImpl.ReaderGroupStateInitSerializer(),
+                synchronizerConfig);
+        ReaderGroupStateManager stateManager = new ReaderGroupStateManager(scope, readerGroup, readerId, sync, controller, nanoTime);
+        stateManager.initializeReader(config.getInitialAllocationDelay());
+        Builder<Stream, WatermarkReaderImpl> watermarkReaders = ImmutableMap.builder();
+        if (!config.isDisableTimeWindows()) {
+            for (Stream stream : stateManager.getStreams()) {
+                String streamName = NameUtils.getMarkStreamForStream(stream.getStreamName());
+                val client = createRevisionedStreamClient(getSegmentForRevisionedClient(stream.getScope(), streamName),
+                        new WatermarkSerializer(),
+                        SynchronizerConfig.builder().readBufferSize(4096).build());
+                watermarkReaders.put(stream, new WatermarkReaderImpl(stream, client, watermarkReaderThreads));
+            }
+        }
+        return new EventStreamReaderFixed<>(inFactory, metaFactory, s, stateManager, new Orderer(),
+                milliTime, config, watermarkReaders.build(), controller, segmentId);
+    }
+
+    @Override
     public <T> EventStreamReader<T> createReader(String readerId, String readerGroup, Serializer<T> s,
                                                  ReaderConfig config) {
         log.info("Creating reader: {} under readerGroup: {} with configuration: {}", readerId, readerGroup, config);

@@ -378,6 +378,21 @@ public class ReaderGroupStateManager {
         }
     }
 
+    /**
+     * If there are unassigned segments and this host has not acquired one in a while, acquires them.
+     * @param timeLag the time between the reader's current location and the end of the stream
+     * @param position the last position read by the reader.
+     * @return A map from the new segment that was acquired to the offset to begin reading from within the segment.
+     */
+    Map<SegmentWithRange, Long> acquireSegmentById(long timeLag, Position position, long segmentId) throws ReaderNotInReaderGroupException {
+        fetchUpdatesIfNeeded();
+        if (sync.getState().getSegments(readerId).stream().noneMatch(s -> s.getSegmentId() == segmentId)) {
+            return acquireSegment(timeLag, position, segmentId);
+        } else {
+            return Collections.emptyMap();
+        }
+    }
+
     boolean canUpdateLagIfNeeded() {
         return !fetchStateTimer.hasRemaining();
     }
@@ -462,6 +477,53 @@ public class ReaderGroupStateManager {
             releaseTimer.reset(UPDATE_WINDOW);
             return true;
         }
+    }
+
+    private Map<SegmentWithRange, Long> acquireSegment(long timeLag, Position position, long segmentID) throws ReaderNotInReaderGroupException {
+        AtomicBoolean reinitRequired = new AtomicBoolean();
+        Map<SegmentWithRange, Long> result = sync.updateState((state, updates) -> {
+            if (!state.isReaderOnline(readerId)) {
+                reinitRequired.set(true);
+                return Collections.<SegmentWithRange, Long>emptyMap();
+            }
+            reinitRequired.set(false);
+            if (state.getCheckpointForReader(readerId) != null) {
+                return Collections.<SegmentWithRange, Long>emptyMap();
+            }
+            int toAcquire = calculateNumSegmentsToAcquire(state);
+            if (toAcquire == 0) {
+                return Collections.<SegmentWithRange, Long>emptyMap();
+            }
+            Map<SegmentWithRange, Long> unassignedSegments = state.getUnassignedSegments();
+            Map<SegmentWithRange, Long> desiredSegmentSingleton = unassignedSegments.keySet()
+                    .stream()
+                    .filter(s -> s.getSegment().getSegmentId() == segmentID)
+                    .findFirst()
+                    .map(segmentWithRange -> {
+                        Map<SegmentWithRange, Long> m = new HashMap<SegmentWithRange, Long>();
+                        m.put(segmentWithRange, unassignedSegments.get(segmentWithRange));
+                    return m;
+                    })
+                    .orElse((Map<SegmentWithRange, Long>) new HashMap<SegmentWithRange, Long>());
+
+            Map<SegmentWithRange, Long> acquired = new HashMap<>(toAcquire);
+            Iterator<Entry<SegmentWithRange, Long>> iter = desiredSegmentSingleton.entrySet().iterator();
+            for (int i = 0; i < toAcquire; i++) {
+                assert iter.hasNext();
+                Entry<SegmentWithRange, Long> segment = iter.next();
+                acquired.put(segment.getKey(), segment.getValue());
+                updates.add(new AcquireSegment(readerId, segment.getKey().getSegment()));
+            }
+            updates.add(new UpdateDistanceToTail(readerId, timeLag, position.asImpl().getOwnedSegmentRangesWithOffsets()));
+            return acquired;
+        });
+        if (reinitRequired.get()) {
+            throw new ReaderNotInReaderGroupException(readerId);
+        }
+        releaseTimer.reset(calculateReleaseTime(readerId, sync.getState()));
+        acquireTimer.reset(calculateAcquireTime(readerId, sync.getState()));
+        resetLagUpdateTimer();
+        return result;
     }
 
     private Map<SegmentWithRange, Long> acquireSegment(long timeLag, Position position) throws ReaderNotInReaderGroupException {

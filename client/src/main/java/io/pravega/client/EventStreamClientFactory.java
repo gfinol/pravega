@@ -167,6 +167,9 @@ public interface EventStreamClientFactory extends AutoCloseable {
      */
     <T> EventStreamReader<T> createReader(String readerId, String readerGroup, Serializer<T> s, ReaderConfig config);
 
+    public <T> EventStreamReader<T> createReaderFixed(String readerId, String readerGroup, Serializer<T> s,
+                                                 ReaderConfig config, long segmentId);
+
     /**
      * Closes the client factory. This will close any connections created through it.
      * @see java.lang.AutoCloseable#close()
