@@ -194,6 +194,10 @@ public final class RoutedEventStreamWriterImpl<RoutingKey, Type> implements Even
         return writeRoutedEventInternal(routingKey, event);
     }
 
+    public int getNumberOfSegments() {
+        return this.selector.getSegments().size();
+    }
+
 
     private CompletableFuture<Void> writeRoutedEventInternal(RoutingKey routingKey, Type event) {
         Preconditions.checkNotNull(event);
