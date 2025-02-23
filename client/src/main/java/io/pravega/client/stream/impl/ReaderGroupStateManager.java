@@ -490,30 +490,31 @@ public class ReaderGroupStateManager {
             if (state.getCheckpointForReader(readerId) != null) {
                 return Collections.<SegmentWithRange, Long>emptyMap();
             }
-            int toAcquire = calculateNumSegmentsToAcquire(state);
+            int toAcquire = calculateNumSegmentsToAcquireFixed(state);
             if (toAcquire == 0) {
                 return Collections.<SegmentWithRange, Long>emptyMap();
             }
             Map<SegmentWithRange, Long> unassignedSegments = state.getUnassignedSegments();
-            Map<SegmentWithRange, Long> desiredSegmentSingleton = unassignedSegments.keySet()
+            Optional<SegmentWithRange> desiredSegmentSingleton = unassignedSegments.keySet()
                     .stream()
                     .filter(s -> s.getSegment().getSegmentId() == segmentID)
-                    .findFirst()
-                    .map(segmentWithRange -> {
-                        Map<SegmentWithRange, Long> m = new HashMap<SegmentWithRange, Long>();
-                        m.put(segmentWithRange, unassignedSegments.get(segmentWithRange));
-                    return m;
-                    })
-                    .orElse((Map<SegmentWithRange, Long>) new HashMap<SegmentWithRange, Long>());
-
+                    .findFirst();
             Map<SegmentWithRange, Long> acquired = new HashMap<>(toAcquire);
-            Iterator<Entry<SegmentWithRange, Long>> iter = desiredSegmentSingleton.entrySet().iterator();
-            for (int i = 0; i < toAcquire; i++) {
-                assert iter.hasNext();
-                Entry<SegmentWithRange, Long> segment = iter.next();
-                acquired.put(segment.getKey(), segment.getValue());
-                updates.add(new AcquireSegment(readerId, segment.getKey().getSegment()));
+            if (!desiredSegmentSingleton.isPresent()) {
+                return Collections.<SegmentWithRange, Long>emptyMap();
+            } else{
+                SegmentWithRange segment = desiredSegmentSingleton.get();
+                acquired.put(segment, unassignedSegments.get(segment));
+                updates.add(new AcquireSegment(readerId, segment.getSegment()));
             }
+
+//            Iterator<Entry<SegmentWithRange, Long>> iter = desiredSegmentSingleton.entrySet().iterator();
+//            for (int i = 0; i < toAcquire; i++) {
+//                assert iter.hasNext();
+//                Entry<SegmentWithRange, Long> segment = iter.next();
+//                acquired.put(segment.getKey(), segment.getValue());
+//                updates.add(new AcquireSegment(readerId, segment.getKey().getSegment()));
+//            }
             updates.add(new UpdateDistanceToTail(readerId, timeLag, position.asImpl().getOwnedSegmentRangesWithOffsets()));
             return acquired;
         });
@@ -573,6 +574,15 @@ public class ReaderGroupStateManager {
         int equallyDistributed = unassignedSegments / numReaders;
         int fairlyDistributed = Math.min(unassignedSegments, Math.round(numSegments / (float) numReaders) - segmentsOwned);
         return Math.max(Math.max(equallyDistributed, fairlyDistributed), 1);
+    }
+
+    private int calculateNumSegmentsToAcquireFixed(ReaderGroupState state) {
+        int segmentsOwned = state.getSegments(readerId).size();
+        if (segmentsOwned == 0) {
+            return 1;
+        } else {
+            return 0;
+        }
     }
 
     private int calculateNumSegmentsToAcquire(ReaderGroupState state) {
